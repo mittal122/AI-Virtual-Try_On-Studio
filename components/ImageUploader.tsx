@@ -7,6 +7,9 @@ interface ImageUploaderProps {
   icon: React.ReactNode;
   onImageUpload: (imageState: ImageState) => void;
   imagePreview: string | null;
+  className?: string;
+  onActivate?: () => void;
+  isActive?: boolean;
 }
 
 const fileToBase64 = (file: File): Promise<{ base64: string; mimeType: string }> => {
@@ -22,7 +25,7 @@ const fileToBase64 = (file: File): Promise<{ base64: string; mimeType: string }>
   });
 };
 
-export const ImageUploader: React.FC<ImageUploaderProps> = ({ id, label, icon, onImageUpload, imagePreview }) => {
+export const ImageUploader: React.FC<ImageUploaderProps> = ({ id, label, icon, onImageUpload, imagePreview, className = '', onActivate, isActive }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFile = useCallback(async (file: File | null) => {
@@ -57,23 +60,27 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ id, label, icon, o
   };
 
   return (
-    <div className="flex flex-col items-center space-y-2">
-      {label && <h3 className="font-semibold text-gray-700">{label}</h3>}
+    <div className="flex flex-col items-center space-y-2 w-full" onClick={onActivate}>
+      {label && <h3 className="font-semibold text-gray-700 dark:text-gray-300">{label}</h3>}
       <label
         htmlFor={id}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`w-full h-48 flex items-center justify-center rounded-lg border-2 border-dashed transition-colors duration-200 cursor-pointer ${
-          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-        }`}
+        className={`w-full h-48 flex items-center justify-center rounded-lg border bg-white dark:bg-slate-800 transition-all duration-200 cursor-pointer ${
+          isDragging 
+            ? 'border-indigo-500 ring-2 ring-indigo-200' 
+            : (isActive 
+                ? 'border-indigo-500 ring-4 ring-indigo-500/30 dark:ring-indigo-500/40' 
+                : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500')
+        } ${className}`}
       >
         {imagePreview ? (
           <img src={imagePreview} alt="Preview" className="h-full w-full object-cover rounded-md" />
         ) : (
           <div className="text-center">
             {icon}
-            <p className="mt-2 text-sm text-gray-500">Click to upload or drag and drop</p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Click to upload, drag & drop, or paste</p>
           </div>
         )}
       </label>

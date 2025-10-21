@@ -182,6 +182,28 @@ export const describePoseFromImage = async (poseImage: ImageData): Promise<strin
   }
 };
 
+export const describeBackgroundFromImage = async (backgroundImage: ImageData): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `You are an expert in describing visual scenes for AI image generation. Analyze the provided image and generate a concise, detailed description of the background environment. The description should be suitable for a text-to-image AI model to accurately recreate the scene. Focus on the key elements of the location, lighting, time of day, weather, and overall mood or atmosphere. Do not describe any people or movable objects in the foreground.`;
+
+    const parts = [
+      { text: prompt },
+      { inlineData: { data: backgroundImage.base64, mimeType: backgroundImage.mimeType } },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Gemini API Error (describeBackgroundFromImage):", error);
+    throw new Error('Failed to describe background from image. Please try again.');
+  }
+};
+
 
 export const renderProductForTryOn = async (productImage: ImageData): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
