@@ -1,5 +1,5 @@
-import { GoogleGenAI, Modality } from "@google/genai";
-import type { GenerateImageProps } from '../types';
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import type { GenerateImageProps, ImageData } from '../types';
 
 export const generateTryOnImage = async ({
   userFace,
@@ -13,14 +13,11 @@ export const generateTryOnImage = async ({
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
-    let prompt = `You are a master digital artist specializing in creating hyper-realistic virtual try-on photographs. Your task is to create an image that is indistinguishable from a real professional photograph.
+    let prompt = `Create a single, photorealistic virtual try-on image. The final result must be a high-quality photograph with seamless integration of all elements.
 
-**Core Task:**
-Generate a single, seamless, high-quality photograph by combining the provided elements. The final output must look completely real, with natural posing and physically accurate details.
-
-**Input Breakdown:**
-- **Image 1 (User's Face):** Seamlessly integrate this face onto the model. Match the skin tone, texture, and lighting perfectly with the model's body. The expression should be natural and relaxed.
-- **Image 2 (Clothing):** Dress the model in this garment. Pay close attention to the fabric's physics—how it drapes, folds, and wrinkles on the body. The texture and material should look tangible.`;
+**Instructions:**
+1.  **Model's Face:** Use the face from the first provided image. Match skin tone and lighting perfectly with the body.
+2.  **Clothing:** Dress the model in the clothing item from the second provided image. Ensure the fabric drapes and folds realistically.`;
 
     const parts: object[] = [
       { inlineData: { data: userFace.base64, mimeType: userFace.mimeType } },
@@ -28,32 +25,31 @@ Generate a single, seamless, high-quality photograph by combining the provided e
     ];
 
     if (modelPose) {
-      prompt += `\n- **Image 3 (Pose):** The model must adopt this exact body pose.`;
+      prompt += `\n3. **Pose:** The model must adopt the exact body pose from the third provided image.`;
       parts.push({ inlineData: { data: modelPose.base64, mimeType: modelPose.mimeType } });
     } else if (describedPose) {
-      prompt += `\n- **Pose Description:** The model's pose should be: "${describedPose}". Ensure it is a natural, physically plausible pose.`;
+      prompt += `\n3. **Pose:** The model's pose should be: "${describedPose}".`;
        if (variationInfo && variationInfo.total > 1) {
-        prompt += ` This is variation ${variationInfo.current} of ${variationInfo.total}. Ensure this pose is unique and distinct from the other variations while still matching the core description.`;
+        prompt += ` This is variation ${variationInfo.current} of ${variationInfo.total}. Make this pose unique while matching the description.`;
       }
     }
 
     if (backgroundImage) {
-      prompt += `\n- **Image 4 (Background):** Use this image as the background for the scene.`;
+      prompt += `\n4. **Background:** Use the fourth provided image as the background.`;
       parts.push({ inlineData: { data: backgroundImage.base64, mimeType: backgroundImage.mimeType } });
     } else if (describedBackground) {
-      prompt += `\n- **Background Description:** The background of the scene should be: "${describedBackground}".`;
+      prompt += `\n4. **Background:** The background must be: "${describedBackground}".`;
     } else {
-      prompt += `\n- **Background:** The background should be a neutral, light gray studio setting.`;
+      prompt += `\n4. **Background:** Use a neutral, light gray studio background.`;
     }
 
     prompt += `
 
-**Key Directives for Realism:**
-1.  **Photography Style:** The final image should look like it was shot on a high-end DSLR camera with a 50mm lens, featuring soft, natural lighting.
-2.  **Physical Accuracy:** Ensure all shadows and highlights are consistent across the face, body, clothing, and background. 
-3.  **Avoid AI Artifacts:** Do not create an image that looks overly smooth, airbrushed, or digitally manipulated. The goal is pure realism, avoiding the "uncanny valley." Maintain natural skin pores and fabric textures. The final result must be a believable photograph.`;
+**Crucial Details:**
+- The lighting and shadows must be consistent across the entire scene.
+- The final image must look like a real photograph, avoiding any digital or "AI" look.`;
     
-    parts.unshift({ text: prompt });
+    parts.push({ text: prompt });
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -72,5 +68,147 @@ Generate a single, seamless, high-quality photograph by combining the provided e
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw new Error('Failed to generate image. Please try again.');
+  }
+};
+
+export const generateCreativePose = async (
+  productImage: ImageData
+): Promise<{ poseDescription: string }> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  try {
+    const prompt = `Based on the provided clothing item, describe a creative and compelling pose for a model. The pose should be suitable for a high-fashion magazine or a brand lookbook. The response must be a valid JSON object.`;
+    const parts = [
+      { text: prompt },
+      { inlineData: { data: productImage.base64, mimeType: productImage.mimeType } },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            poseDescription: {
+              type: Type.STRING,
+              description: "A detailed description of the model's pose.",
+            },
+          },
+          required: ['poseDescription'],
+        },
+      },
+    });
+
+    const jsonString = response.text.trim();
+    const scene = JSON.parse(jsonString);
+
+    if (!scene || typeof scene.poseDescription !== 'string') {
+      throw new Error('Invalid JSON structure in API response.');
+    }
+    
+    return scene;
+  } catch (error) {
+    console.error("Gemini API Error (generateCreativePose):", error);
+    throw new Error('Failed to generate creative pose. Please try again.');
+  }
+};
+
+export const generateCreativeBackground = async (
+  productImage: ImageData
+): Promise<{ backgroundDescription: string }> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  try {
+    const prompt = `Based on the provided clothing item, describe a creative and compelling background scene for a photoshoot. The background should complement the clothing and be suitable for a high-fashion magazine or a brand lookbook. The response must be a valid JSON object.`;
+    const parts = [
+      { text: prompt },
+      { inlineData: { data: productImage.base64, mimeType: productImage.mimeType } },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            backgroundDescription: {
+              type: Type.STRING,
+              description: "A detailed description of the scene's background.",
+            },
+          },
+          required: ['backgroundDescription'],
+        },
+      },
+    });
+
+    const jsonString = response.text.trim();
+    const scene = JSON.parse(jsonString);
+
+    if (!scene || typeof scene.backgroundDescription !== 'string') {
+      throw new Error('Invalid JSON structure in API response.');
+    }
+    
+    return scene;
+  } catch (error) {
+    console.error("Gemini API Error (generateCreativeBackground):", error);
+    throw new Error('Failed to generate creative background. Please try again.');
+  }
+};
+
+
+export const describePoseFromImage = async (poseImage: ImageData): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `You are an expert in human anatomy and body language. Analyze the provided image and generate a concise, detailed description of the person's pose. The description should be suitable for a text-to-image AI model to accurately recreate the pose. Focus on the position of the head, torso, arms, hands, legs, and feet. Describe the overall mood or attitude conveyed by the pose (e.g., confident, relaxed, dynamic, etc.).`;
+
+    const parts = [
+      { text: prompt },
+      { inlineData: { data: poseImage.base64, mimeType: poseImage.mimeType } },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Gemini API Error (describePoseFromImage):", error);
+    throw new Error('Failed to describe pose from image. Please try again.');
+  }
+};
+
+
+export const renderProductForTryOn = async (productImage: ImageData): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `From the provided image, isolate the clothing item. Render the item on a transparent background, making it look like it's worn on an invisible mannequin to show its natural shape. The final output must be a PNG with a transparent background.`;
+
+    const parts = [
+      { inlineData: { data: productImage.base64, mimeType: productImage.mimeType } },
+      { text: prompt },
+    ];
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: parts },
+      config: {
+        responseModalities: [Modality.IMAGE],
+      },
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return part.inlineData.data; // This is the base64 string of the PNG
+      }
+    }
+    throw new Error('No image data found in the API response for product rendering.');
+  } catch (error) {
+    console.error("Gemini API Error (renderProductForTryOn):", error);
+    throw new Error('Failed to render product. The image might be unclear or unsupported.');
   }
 };

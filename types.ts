@@ -8,6 +8,15 @@ export interface ImageState {
 export interface Pose {
   id: number;
   url: string;
+  name: string;
+  description: string;
+}
+
+export interface BackgroundOption {
+  id: number;
+  url: string;
+  name: string;
+  description: string;
 }
 
 export interface ImageData {
