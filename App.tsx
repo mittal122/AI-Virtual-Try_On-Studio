@@ -3,7 +3,7 @@ import { ImageUploader } from './components/ImageUploader';
 import { PoseSelector } from './components/PoseSelector';
 import { BackgroundSelector } from './components/BackgroundSelector';
 import { GalleryModal } from './components/GalleryModal';
-import { UserIcon, ShirtIcon, DownloadIcon, SpinnerIcon, SparklesIcon, BodyPoseIcon, SunIcon, MoonIcon, GalleryIcon, SaveIcon } from './components/icons';
+import { UserIcon, ShirtIcon, DownloadIcon, SpinnerIcon, SparklesIcon, BodyPoseIcon, SunIcon, MoonIcon, GalleryIcon, SaveIcon, PantsIcon, DressIcon } from './components/icons';
 import { MODEL_POSES, BACKGROUND_OPTIONS } from './constants';
 import type { ImageState, Pose, BackgroundOption } from './types';
 import { generateTryOnImage, generateCreativePose, generateCreativeBackground, describePoseFromImage, describeBackgroundFromImage, renderProductForTryOn } from './services/geminiService';
@@ -18,6 +18,7 @@ const initialImageState: ImageState = {
 type PoseMode = 'select' | 'describe' | 'upload';
 type BackgroundMode = 'none' | 'select' | 'upload' | 'describe';
 type ProductStatus = 'idle' | 'rendering' | 'pending_approval' | 'approved';
+type ProductType = 'upper' | 'lower' | 'full';
 type Theme = 'light' | 'dark';
 
 
@@ -53,9 +54,15 @@ const StepContainer: React.FC<{ number: string; title: string; children: React.R
 
 function App() {
   const [userFace, setUserFace] = useState<ImageState>(initialImageState);
-  const [productImage, setProductImage] = useState<ImageState>(initialImageState);
-  const [renderedProductImage, setRenderedProductImage] = useState<ImageState>(initialImageState);
-  const [productStatus, setProductStatus] = useState<ProductStatus>('idle');
+
+  const [productStates, setProductStates] = useState({
+    upper: { image: initialImageState, renderedImage: initialImageState, status: 'idle' as ProductStatus },
+    lower: { image: initialImageState, renderedImage: initialImageState, status: 'idle' as ProductStatus },
+    full: { image: initialImageState, renderedImage: initialImageState, status: 'idle' as ProductStatus },
+  });
+  const [productType, setProductType] = useState<ProductType>('upper');
+  const activeProductState = productStates[productType];
+
   const [backgroundImage, setBackgroundImage] = useState<ImageState>(initialImageState);
   const [uploadedPoseImage, setUploadedPoseImage] = useState<ImageState>(initialImageState);
 
@@ -75,7 +82,9 @@ function App() {
   const [isDescribingPose, setIsDescribingPose] = useState<boolean>(false);
   const [isDescribingUploadedBackground, setIsDescribingUploadedBackground] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
+  const [theme, setTheme] = useState<Theme>(() => 
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  );
   
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
@@ -177,8 +186,8 @@ function App() {
 
 
   const isGenerateButtonDisabled = useMemo(() => {
-    if (isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground || productStatus === 'rendering') return true;
-    if (!userFace.file || productStatus !== 'approved') return true;
+    if (isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground || activeProductState.status === 'rendering') return true;
+    if (!userFace.file || activeProductState.status !== 'approved') return true;
     
     if (isMultiVariation) {
         return describedPose.trim() === '';
@@ -188,10 +197,10 @@ function App() {
     const poseDescribed = poseMode === 'describe' && describedPose.trim() !== '';
     const poseUploaded = poseMode === 'upload' && uploadedPoseImage.file;
     return !(poseSelected || poseDescribed || poseUploaded);
-  }, [userFace, productStatus, poseMode, selectedPose, describedPose, uploadedPoseImage, isLoading, isInspiringPose, isInspiringBackground, isDescribingPose, isDescribingUploadedBackground, isMultiVariation]);
+  }, [userFace, activeProductState.status, poseMode, selectedPose, describedPose, uploadedPoseImage, isLoading, isInspiringPose, isInspiringBackground, isDescribingPose, isDescribingUploadedBackground, isMultiVariation]);
 
   const handleInspirePose = async () => {
-    if (!renderedProductImage.base64 || !renderedProductImage.mimeType) {
+    if (!activeProductState.renderedImage.base64 || !activeProductState.renderedImage.mimeType) {
       setError("Please approve a product image first to get inspired.");
       return;
     }
@@ -199,8 +208,8 @@ function App() {
     setError(null);
     try {
       const { poseDescription } = await generateCreativePose({
-        base64: renderedProductImage.base64,
-        mimeType: renderedProductImage.mimeType,
+        base64: activeProductState.renderedImage.base64,
+        mimeType: activeProductState.renderedImage.mimeType,
       });
       setDescribedPose(poseDescription);
       setPoseMode('describe');
@@ -213,7 +222,7 @@ function App() {
   };
 
   const handleInspireBackground = async () => {
-    if (!renderedProductImage.base64 || !renderedProductImage.mimeType) {
+    if (!activeProductState.renderedImage.base64 || !activeProductState.renderedImage.mimeType) {
       setError("Please approve a product image first to get inspired.");
       return;
     }
@@ -221,8 +230,8 @@ function App() {
     setError(null);
     try {
       const { backgroundDescription } = await generateCreativeBackground({
-        base64: renderedProductImage.base64,
-        mimeType: renderedProductImage.mimeType,
+        base64: activeProductState.renderedImage.base64,
+        mimeType: activeProductState.renderedImage.mimeType,
       });
       setDescribedBackground(backgroundDescription);
       setBackgroundMode('describe');
@@ -285,10 +294,16 @@ function App() {
   };
 
   const handleProductImageUpload = async (imageState: ImageState) => {
-    setProductImage(imageState);
-    setProductStatus('rendering');
+    setProductStates(prev => ({
+      ...prev,
+      [productType]: {
+        ...prev[productType],
+        image: imageState,
+        status: 'rendering',
+        renderedImage: initialImageState,
+      }
+    }));
     setError(null);
-    setRenderedProductImage(initialImageState);
 
     try {
       if (!imageState.base64 || !imageState.mimeType) {
@@ -303,31 +318,60 @@ function App() {
       const mimeType = 'image/png';
       const previewUrl = `data:${mimeType};base64,${renderedBase64}`;
 
-      setRenderedProductImage({
-        file: null,
-        previewUrl,
-        base64: renderedBase64,
-        mimeType,
-      });
-      setProductStatus('pending_approval');
+      setProductStates(prev => ({
+        ...prev,
+        [productType]: {
+          ...prev[productType],
+          renderedImage: {
+            file: null,
+            previewUrl,
+            base64: renderedBase64,
+            mimeType,
+          },
+          status: 'pending_approval',
+        }
+      }));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
-      setProductStatus('idle');
-      setProductImage(initialImageState);
+      setProductStates(prev => ({
+        ...prev,
+        [productType]: {
+          image: initialImageState,
+          renderedImage: initialImageState,
+          status: 'idle',
+        }
+      }));
     }
   };
 
   const handleApproveProduct = () => {
-    setProductStatus('approved');
+    setProductStates(prev => ({
+      ...prev,
+      [productType]: {
+        ...prev[productType],
+        status: 'approved',
+      }
+    }));
   };
 
   const handleRejectProduct = () => {
-    setProductStatus('idle');
-    setProductImage(initialImageState);
-    setRenderedProductImage(initialImageState);
+    setProductStates(prev => ({
+      ...prev,
+      [productType]: {
+        image: initialImageState,
+        renderedImage: initialImageState,
+        status: 'idle',
+      }
+    }));
   };
-
+  
+  const handleProductTypeChange = (type: ProductType) => {
+    if (type !== productType) {
+      setProductType(type);
+      setError(null);
+    }
+  };
 
   const handleGenerate = async () => {
     if (isGenerateButtonDisabled) return;
@@ -337,7 +381,7 @@ function App() {
     setGeneratedImages(null);
 
     try {
-      if (!userFace.base64 || !userFace.mimeType || !renderedProductImage.base64 || !renderedProductImage.mimeType) {
+      if (!userFace.base64 || !userFace.mimeType || !activeProductState.renderedImage.base64 || !activeProductState.renderedImage.mimeType) {
         throw new Error("Missing required image data.");
       }
       
@@ -357,7 +401,8 @@ function App() {
       const generationPromises = Array.from({ length: numVariations }).map((_, index) => {
          return generateTryOnImage({
             userFace: { base64: userFace.base64!, mimeType: userFace.mimeType! },
-            productImage: { base64: renderedProductImage.base64!, mimeType: renderedProductImage.mimeType! },
+            productImage: { base64: activeProductState.renderedImage.base64!, mimeType: activeProductState.renderedImage.mimeType! },
+            productType,
             describedPose: finalDescribedPose,
             backgroundImage: backgroundData,
             describedBackground: finalDescribedBackground,
@@ -427,6 +472,19 @@ function App() {
     </div>
   );
 
+  const ProductTabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> = ({ label, isActive, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`px-4 py-2 -mb-px text-sm font-semibold border-b-2 transition-colors duration-200 focus:outline-none ${
+            isActive
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+        }`}
+    >
+        {label}
+    </button>
+  );
 
   return (
     <div className="bg-slate-50 dark:bg-slate-900 min-h-screen text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300">
@@ -473,64 +531,88 @@ function App() {
                 </StepContainer>
 
                  <StepContainer number="02" title="Upload Product Image">
-                    {productStatus === 'idle' && (
-                    <ImageUploader
-                        id="product-upload"
-                        icon={<ShirtIcon />}
-                        onImageUpload={handleProductImageUpload}
-                        imagePreview={null}
-                        onActivate={() => setActiveUploader('product')}
-                        isActive={activeUploader === 'product'}
-                    />
-                    )}
-
-                    {productStatus === 'rendering' && productImage.previewUrl && (
-                    <div className="relative w-full h-48">
-                        <img src={productImage.previewUrl} alt="Uploading..." className="h-full w-full object-cover rounded-md opacity-50" />
-                        <div className="absolute inset-0 bg-white/80 dark:bg-slate-800/80 flex flex-col items-center justify-center rounded-lg border border-dashed border-indigo-500">
-                        <SpinnerIcon />
-                        <p className="mt-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400">Preparing product...</p>
-                        </div>
+                    <div className="flex justify-center space-x-2 border-b border-gray-200 dark:border-gray-700">
+                        <ProductTabButton
+                            label="Upper Body"
+                            isActive={productType === 'upper'}
+                            onClick={() => handleProductTypeChange('upper')}
+                        />
+                        <ProductTabButton
+                            label="Lower Body"
+                            isActive={productType === 'lower'}
+                            onClick={() => handleProductTypeChange('lower')}
+                        />
+                        <ProductTabButton
+                            label="Full Body"
+                            isActive={productType === 'full'}
+                            onClick={() => handleProductTypeChange('full')}
+                        />
                     </div>
-                    )}
-                    
-                    {productStatus === 'pending_approval' && productImage.previewUrl && renderedProductImage.previewUrl && (
-                    <div className="w-full text-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                        <p className="font-semibold mb-2 text-sm text-gray-700 dark:text-gray-200">Does the rendered product look correct?</p>
-                        <div className="grid grid-cols-2 gap-2 items-center">
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Original</p>
-                            <img src={productImage.previewUrl} alt="Original product" className="w-full h-32 object-contain rounded-md border bg-white dark:bg-slate-800 dark:border-gray-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Rendered</p>
-                            <div
-                            className="w-full h-32 bg-contain bg-no-repeat bg-center rounded-md border border-gray-200 dark:border-gray-600"
-                            style={{
-                                backgroundImage: `url(${renderedProductImage.previewUrl}), linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)`,
-                                backgroundSize: `auto 95%, 16px 16px, 16px 16px, 16px 16px, 16px 16px`,
-                                backgroundPosition: `center, 0 0, 8px 8px, 8px 8px, 0 0`,
-                            }}
-                            ></div>
-                        </div>
-                        </div>
-                        <div className="flex justify-center space-x-4 mt-3">
-                        <button onClick={handleApproveProduct} className="px-4 py-1.5 text-sm bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm">Looks Good</button>
-                        <button onClick={handleRejectProduct} className="px-4 py-1.5 text-sm bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm">Try Another</button>
-                        </div>
-                    </div>
-                    )}
+                    <div className="mt-4">
+                        {activeProductState.status === 'idle' && (
+                        <ImageUploader
+                            id={`${productType}-upload`}
+                            key={productType}
+                            icon={
+                                productType === 'upper' ? <ShirtIcon /> :
+                                productType === 'lower' ? <PantsIcon /> :
+                                <DressIcon />
+                            }
+                            onImageUpload={handleProductImageUpload}
+                            imagePreview={null}
+                            onActivate={() => setActiveUploader('product')}
+                            isActive={activeUploader === 'product'}
+                        />
+                        )}
 
-                    {productStatus === 'approved' && renderedProductImage.previewUrl && (
-                        <div className="relative w-full h-48 p-2 border-2 border-dashed border-green-500 rounded-lg bg-green-50 dark:bg-green-900/20">
-                            <p className="text-center text-sm font-semibold text-green-800 dark:text-green-300">✓ Product Approved</p>
-                            <div
-                                className="w-full h-[calc(100%-2rem)] bg-contain bg-no-repeat bg-center"
-                                style={{ backgroundImage: `url(${renderedProductImage.previewUrl})` }}
-                            ></div>
-                            <button onClick={handleRejectProduct} className="absolute top-1 right-1 text-xs text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-white hover:underline">Change</button>
+                        {activeProductState.status === 'rendering' && activeProductState.image.previewUrl && (
+                        <div className="relative w-full h-48">
+                            <img src={activeProductState.image.previewUrl} alt="Uploading..." className="h-full w-full object-cover rounded-md opacity-50" />
+                            <div className="absolute inset-0 bg-white/80 dark:bg-slate-800/80 flex flex-col items-center justify-center rounded-lg border border-dashed border-indigo-500">
+                            <SpinnerIcon />
+                            <p className="mt-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400">Preparing product...</p>
+                            </div>
                         </div>
-                    )}
+                        )}
+                        
+                        {activeProductState.status === 'pending_approval' && activeProductState.image.previewUrl && activeProductState.renderedImage.previewUrl && (
+                        <div className="w-full text-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                            <p className="font-semibold mb-2 text-sm text-gray-700 dark:text-gray-200">Does the rendered product look correct?</p>
+                            <div className="grid grid-cols-2 gap-2 items-center">
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Original</p>
+                                <img src={activeProductState.image.previewUrl} alt="Original product" className="w-full h-32 object-contain rounded-md border bg-white dark:bg-slate-800 dark:border-gray-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Rendered</p>
+                                <div
+                                className="w-full h-32 bg-contain bg-no-repeat bg-center rounded-md border border-gray-200 dark:border-gray-600"
+                                style={{
+                                    backgroundImage: `url(${activeProductState.renderedImage.previewUrl}), linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)`,
+                                    backgroundSize: `auto 95%, 16px 16px, 16px 16px, 16px 16px, 16px 16px`,
+                                    backgroundPosition: `center, 0 0, 8px 8px, 8px 8px, 0 0`,
+                                }}
+                                ></div>
+                            </div>
+                            </div>
+                            <div className="flex justify-center space-x-4 mt-3">
+                            <button onClick={handleApproveProduct} className="px-4 py-1.5 text-sm bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm">Looks Good</button>
+                            <button onClick={handleRejectProduct} className="px-4 py-1.5 text-sm bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm">Try Another</button>
+                            </div>
+                        </div>
+                        )}
+
+                        {activeProductState.status === 'approved' && activeProductState.renderedImage.previewUrl && (
+                            <div className="relative w-full h-48 p-2 border-2 border-dashed border-green-500 rounded-lg bg-green-50 dark:bg-green-900/20">
+                                <p className="text-center text-sm font-semibold text-green-800 dark:text-green-300">✓ Product Approved</p>
+                                <div
+                                    className="w-full h-[calc(100%-2rem)] bg-contain bg-no-repeat bg-center"
+                                    style={{ backgroundImage: `url(${activeProductState.renderedImage.previewUrl})` }}
+                                ></div>
+                                <button onClick={handleRejectProduct} className="absolute top-1 right-1 text-xs text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-white hover:underline">Change</button>
+                            </div>
+                        )}
+                    </div>
                 </StepContainer>
 
                  <StepContainer number="03" title="Configure Scene">
@@ -543,7 +625,7 @@ function App() {
                                     <button
                                         type="button"
                                         onClick={handleInspirePose}
-                                        disabled={productStatus !== 'approved' || isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground}
+                                        disabled={activeProductState.status !== 'approved' || isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground}
                                         className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
                                         {isInspiringPose ? <SpinnerIcon /> : <SparklesIcon className="w-4 h-4" />}
@@ -604,7 +686,7 @@ function App() {
                                     <button
                                         type="button"
                                         onClick={handleInspireBackground}
-                                        disabled={productStatus !== 'approved' || isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground}
+                                        disabled={activeProductState.status !== 'approved' || isLoading || isInspiringPose || isInspiringBackground || isDescribingPose || isDescribingUploadedBackground}
                                         className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
                                         {isInspiringBackground ? <SpinnerIcon /> : <SparklesIcon className="w-4 h-4" />}

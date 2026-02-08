@@ -4,6 +4,7 @@ import type { GenerateImageProps, ImageData } from '../types';
 export const generateTryOnImage = async ({
   userFace,
   productImage,
+  productType,
   modelPose,
   describedPose,
   backgroundImage,
@@ -13,11 +14,27 @@ export const generateTryOnImage = async ({
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
+    let clothingInstruction: string;
+    switch (productType) {
+      case 'upper':
+        clothingInstruction = `Dress the model in the upper-body clothing item from the second provided image. Pair it with simple, neutral-colored pants (e.g., dark jeans or black trousers) that do not distract from the main item.`;
+        break;
+      case 'lower':
+        clothingInstruction = `Dress the model in the lower-body clothing item from the second provided image. Pair it with a simple, neutral-colored top (e.g., a plain white or black t-shirt) that is tucked in if appropriate for the style.`;
+        break;
+      case 'full':
+        clothingInstruction = `Dress the model in the full-body clothing item from the second provided image.`;
+        break;
+      default:
+        clothingInstruction = `Dress the model in the clothing item from the second provided image.`;
+    }
+
+
     let prompt = `Create a single, photorealistic virtual try-on image. The final result must be a high-quality photograph with seamless integration of all elements.
 
 **Instructions:**
 1.  **Model's Face:** Use the face from the first provided image. Match skin tone and lighting perfectly with the body.
-2.  **Clothing:** Dress the model in the clothing item from the second provided image. Ensure the fabric drapes and folds realistically.`;
+2.  **Clothing:** ${clothingInstruction} Ensure the fabric drapes and folds realistically.`;
 
     const parts: object[] = [
       { inlineData: { data: userFace.base64, mimeType: userFace.mimeType } },

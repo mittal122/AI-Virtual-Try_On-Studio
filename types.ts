@@ -27,6 +27,7 @@ export interface ImageData {
 export interface GenerateImageProps {
   userFace: ImageData;
   productImage: ImageData;
+  productType: 'upper' | 'lower' | 'full';
   modelPose?: ImageData;
   describedPose?: string;
   backgroundImage?: ImageData;
